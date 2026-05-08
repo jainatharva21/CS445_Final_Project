@@ -1,0 +1,14 @@
+# Training / eval outputs (often multi‑GB; keep local only)
+logs/
+
+# Processed video data (use Drive link in report; paths live in YAML)
+dataset/
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.DS_Store
+.pytest_cache/
+.mypy_cache/
