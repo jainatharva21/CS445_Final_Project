@@ -26,6 +26,107 @@ def make_coordinate_grid(spatial_size, type):
 
     return coordinate_grid
 
+def kp2gaussian(kp, spatial_size, kp_variance):
+    """
+    Transform keypoints into Gaussian-like heatmap representations.
+    """
+    mean = kp["value"]
+
+    coordinate_grid = make_coordinate_grid(spatial_size, mean.type())
+
+    number_of_leading_dimensions = len(mean.shape) - 1
+
+    shape = (1,) * number_of_leading_dimensions + coordinate_grid.shape
+    coordinate_grid = coordinate_grid.view(*shape)
+
+    repeats = mean.shape[:number_of_leading_dimensions] + (1, 1, 1)
+    coordinate_grid = coordinate_grid.repeat(*repeats)
+
+    shape = mean.shape[:number_of_leading_dimensions] + (1, 1, 2)
+    mean = mean.view(*shape)
+
+    mean_sub = coordinate_grid - mean
+
+    out = torch.exp(
+        -0.5 * (mean_sub ** 2).sum(-1) / kp_variance
+    )
+
+    return out
+
+class AntiAliasInterpolation2d(nn.Module):
+    """
+    Downsamples an image with anti-aliasing.
+
+    This is used when scale_factor != 1. Before resizing, it applies
+    a Gaussian blur so that high-frequency details do not alias badly
+    during downsampling.
+
+    Input:
+        x: [B, C, H, W]
+
+    Output:
+        resized tensor [B, C, new_H, new_W]
+    """
+    def __init__(self, channels, scale):
+        super().__init__()
+
+        self.scale = scale
+        self.channels = channels
+
+        if scale == 1.0:
+            self.ka = 0
+            self.kb = 0
+            self.register_buffer("weight", torch.zeros(1))
+            return
+
+        sigma = (1 / scale - 1) / 2
+
+        kernel_size = 2 * round(sigma * 4) + 1
+        self.ka = kernel_size // 2
+        self.kb = self.ka - 1 if kernel_size % 2 == 0 else self.ka
+
+        kernel_size = [kernel_size, kernel_size]
+        sigma = [sigma, sigma]
+
+        kernel = 1
+
+        meshgrids = torch.meshgrid(
+            [
+                torch.arange(size, dtype=torch.float32)
+                for size in kernel_size
+            ],
+            indexing="ij"
+        )
+
+        for size, std, grid in zip(kernel_size, sigma, meshgrids):
+            mean = (size - 1) / 2
+            kernel *= torch.exp(
+                -((grid - mean) ** 2) / (2 * std ** 2)
+            )
+
+        kernel = kernel / torch.sum(kernel)
+
+        kernel = kernel.view(1, 1, kernel_size[0], kernel_size[1])
+        kernel = kernel.repeat(channels, 1, 1, 1)
+
+        self.register_buffer("weight", kernel)
+
+    def forward(self, x):
+        if self.scale == 1.0:
+            return x
+
+        out = F.pad(x, (self.ka, self.kb, self.ka, self.kb))
+        out = F.conv2d(out, weight=self.weight, groups=self.channels)
+
+        out = F.interpolate(
+            out,
+            scale_factor=(self.scale, self.scale),
+            mode="bilinear",
+            align_corners=False,
+            recompute_scale_factor=True
+        )
+
+        return out
 
 class SameBlock2d(nn.Module):
     """
