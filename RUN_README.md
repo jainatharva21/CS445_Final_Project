@@ -1,24 +1,26 @@
 # How to run this project (CS 445 / submission)
 
-**Working directory matters.** Paths such as `dataset_params.root_dir: dataset/moving-gif-processed/...` in YAML are resolved relative to the **shell’s current working directory** (where you run `python …`), not relative to `cli.py`. Easiest options:
+**Use this folder as working directory.** Run every command **after** `cd` into **`CS445_Final_Project`**. Paths in YAML such as `dataset/moving-gif-processed/...` are read **relative to that shell location**.
 
-1. **`cd` into `CS445_Final_Project/`** and keep a **`dataset/`** folder here (copy, symlink, or unzip MGIF under `dataset/moving-gif-processed/…`), matching the default configs; or  
-2. Stay in the **parent Git repo root** (`first-order-model/`) if your data already lives at **`./dataset/...`** there, and invoke the launcher with an explicit path, e.g. `python CS445_Final_Project/cli.py train --config CS445_Final_Project/config/mgif-e2e-smoke.yaml --log_dir CS445_Final_Project/logs/e2e`; or  
-3. Edit **`root_dir`** in YAML to an **absolute path** or to something like **`../dataset/moving-gif-processed/moving-gif-128`** if your layout differs.
+Put MGIF-style data here:
 
-If your submission system expects a file named **`README.md`**, rename or copy this file to `README.md` (content can stay identical).
+- `dataset/moving-gif-processed/moving-gif/` (`train/` and `test/`) for 256 configs  
+- `dataset/moving-gif-processed/moving-gif-128/` for 128 configs  
 
-**Layout:** Launchers **`cli.py`**, **`run.py`**, **`demo.py`** sit at this folder’s root; **`config/`** holds YAML; **`scripts/`** holds metrics helpers. Package **`fom/`** is organized as:
+If those folders are missing or misplaced, training will fail when the loader builds the index.
 
-- **`fom/modules/`** - generator, discriminator, keypoint / dense-motion blocks (**kept compatible** with the public FOMM checkpoints).  
-- **`fom/data/`** - clip decoding (`video_io`), augmentations (`spatial_augmentation`), PyTorch datasets (`datasets`).  
-- **`fom/services/`** - training loop, reconstruction, and animation (`training_loop`, `inference`, `model_factory`).  
-- **`fom/entry.py`** - argparse, log dirs, dispatch.  
-- **Legacy filenames** (`fom/train.py`, `fom/frames_dataset.py`, `fom/augmentation.py`, …) are thin re-exports so older imports still work.
 
-Launchers prepend **this** directory to `sys.path` so `import fom` works.
+---
 
-**Course report:** when this tree lives inside the **`first-order-model`** repo, the Markdown report is at the repo root: **`../CS445_PROJECT_REPORT.md`**. Figures in that report point to **`report_assets/`** here.
+## Package layout
+
+- **`cli.py`**, **`run.py`**, **`demo.py`** — launchers.  
+- **`config/`** — YAML experiments.  
+- **`scripts/`** — metrics helper (`eval_reconstruction_metrics.py`).  
+- **`fom/modules/`** — generator, discriminator, keypoints / dense motion.  
+- **`fom/data/`** — decoding (`video_io`), augmentations, datasets.  
+- **`fom/services/`** — training loop and reconstruction / animation.  
+- **`fom/entry.py`** — CLI routing.
 
 ---
 
@@ -26,8 +28,8 @@ Launchers prepend **this** directory to `sys.path` so `import fom` works.
 
 - **Python 3.8+** (`fom/entry.py` enforces 3.8+; tested with **3.9** and pinned `requirements.txt`)
 - **Git** (optional)
-- **GPU:** optional but strongly recommended for training. CPU runs are very slow for full epochs.
-- **FFmpeg:** optional for **MP4** outputs. If `reconstruction` / `animate` fail with “no ffmpeg exe”, either install system FFmpeg or set configs to use **`.gif`** (see `config/mgif-e2e-smoke.yaml`).
+- **GPU:** strongly recommended for longer training; CPU works but is slow per epoch.
+- **FFmpeg:** optional for MP4; GIF configs avoid needing it (see `config/mgif-e2e-smoke.yaml`).
 
 ---
 
@@ -41,43 +43,42 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-**Data:** place the processed MGIF-style tree so it matches `dataset_params.root_dir` **from your chosen cwd**, for example:
-
-- `dataset/moving-gif-processed/moving-gif/` with `train/` and `test/` (256 configs)
-- `dataset/moving-gif-processed/moving-gif-128/` for 128 configs
-
-If those folders are missing **relative to cwd**, training will fail at dataset init with `FileNotFoundError` or an empty index.
-
 ---
 
 ## 3. Training
 
-**Local 256 MGIF (smaller batch, fits single GPU better):**
+**Local 256 MGIF (smaller batch):**
 
 ```bash
 source .venv/bin/activate
 python cli.py train --config config/mgif-256-local.yaml --log_dir logs
 ```
 
-**Paper-style 256 batch (needs large VRAM, often multi-GPU):**
+**Large-batch 256 (heavy VRAM, multi-device optional):**
 
 ```bash
 python cli.py train --config config/mgif-256.yaml --log_dir logs --device_ids 0,1
 ```
 
-**Fast pipeline smoke (128×128 MGIF, 1 epoch, small recon/animate budgets, GIF outputs):**
+**Smoke (128×128, 1 epoch, GIF recon/animate budgets):**
 
 ```bash
 python cli.py train --config config/mgif-e2e-smoke.yaml --log_dir logs/e2e
 ```
 
-Smoke training is **CPU-heavy** (about **10–15+ minutes per epoch** on a typical laptop CPU for `mgif-e2e-smoke`; much faster on GPU). Use GPU when available.
+Smoke is slow on CPU (often **~10–15+ minutes per epoch** for `mgif-e2e-smoke`; GPUs shorten this).
 
-**Full E2E smoke in one session** (train, then recon, animate, metrics). After training, locate the new folder under `--log_dir` named like `mgif-e2e-smoke DD_MM_YY_HH.MM.SS/` and set `CKPT` to its `00000000-checkpoint.pth.tar` (**quote** the variable-names contain spaces):
+**Multi-epoch 128** (5 epochs, batch 16; aligns with the report’s main numbers):
+
+```bash
+python cli.py train --config config/mgif-128-5ep-run.yaml --log_dir logs/mgif128_5ep_run
+```
+
+**E2E smoke chain** (train → reconstruction → animate → metrics). After training, open the timestamped folder under `--log_dir`, note its exact name (spaces allowed), and **quote** `CKPT`:
 
 ```bash
 source .venv/bin/activate
-cd /path/to/CS445_Final_Project   # or stay at monorepo root and prefix paths as in note below
+cd /path/to/CS445_Final_Project
 python cli.py train --config config/mgif-e2e-smoke.yaml --log_dir logs/e2e_verify_run
 CKPT="logs/e2e_verify_run/mgif-e2e-smoke <DATE_TIME>/00000000-checkpoint.pth.tar"
 python cli.py reconstruction --config config/mgif-e2e-smoke.yaml --checkpoint "$CKPT"
@@ -87,42 +88,26 @@ python scripts/eval_reconstruction_metrics.py \
   --max_videos 50 --out_csv logs/e2e_verify_run/metrics.csv
 ```
 
-**From monorepo root** (when `dataset/` is at **`./dataset/...`** next to **`CS445_Final_Project/`**):
-
-```bash
-cd /path/to/first-order-model
-CFG=CS445_Final_Project/config/mgif-e2e-smoke.yaml
-LOG=CS445_Final_Project/logs/e2e_verify_run
-python3 CS445_Final_Project/cli.py train --config "$CFG" --log_dir "$LOG"
-CKPT="$LOG/mgif-e2e-smoke <DATE_TIME>/00000000-checkpoint.pth.tar"
-python3 CS445_Final_Project/cli.py reconstruction --config "$CFG" --checkpoint "$CKPT"
-python3 CS445_Final_Project/cli.py animate --config "$CFG" --checkpoint "$CKPT"
-python3 CS445_Final_Project/scripts/eval_reconstruction_metrics.py --config "$CFG" --checkpoint "$CKPT" \
-  --max_videos 50 --out_csv "$LOG/metrics.csv"
-```
-
-**Equivariance ablation (same smoke structure, equivariance losses off):**
+**Equivariance-off variant** (`mgif-ablation-no-equiv.yaml`) — optional comparison train:
 
 ```bash
 python cli.py train --config config/mgif-ablation-no-equiv.yaml --log_dir logs/e2e
 ```
 
-**Resume** from a checkpoint (same config as that run):
+**Resume:**
 
 ```bash
 python cli.py train --config config/mgif-256-local.yaml --log_dir logs \
   --checkpoint "logs/<run_folder>/00000010-checkpoint.pth.tar"
 ```
 
-**Outputs:** a timestamped folder under `--log_dir`, for example `logs/mgif-256-local 10_05_26_12.00.00/`, containing:
-
-- copied YAML, `log.txt`, `*-checkpoint.pth.tar`, `train-vis/` (PNG grids)
+**Outputs:** under `--log_dir`, one timestamped folder per run with copied YAML, `log.txt`, checkpoints (`*-checkpoint.pth.tar`), `train-vis/`.
 
 ---
 
-## 4. Reconstruction (needs a checkpoint)
+## 4. Reconstruction
 
-`--config` must match the **architecture** used to train that checkpoint (resolution, `num_kp`, etc.).
+`--config` must match how the checkpoint was trained.
 
 ```bash
 python cli.py reconstruction \
@@ -130,13 +115,11 @@ python cli.py reconstruction \
   --checkpoint "logs/e2e_verify_run/mgif-e2e-smoke 10_05_26_18.01.14/00000000-checkpoint.pth.tar"
 ```
 
-(Replace with any run folder that contains your checkpoint; **quote** paths with spaces.)
-
-**Outputs:** next to the checkpoint file: `reconstruction/` (GIF or MP4 per config) and `reconstruction/png/` (wide strip PNGs).
+**Outputs:** `reconstruction/` and `reconstruction/png/` beside that checkpoint.
 
 ---
 
-## 5. Animation (needs a checkpoint)
+## 5. Animation
 
 ```bash
 python cli.py animate \
@@ -146,11 +129,9 @@ python cli.py animate \
 
 **Outputs:** `animation/` and `animation/png/` beside that checkpoint.
 
-Smoke configs set `max_driving_frames` so CPU runs finish in reasonable time.
-
 ---
 
-## 6. Reconstruction metrics (CSV, no GIF IO)
+## 6. Reconstruction metrics (CSV)
 
 ```bash
 python scripts/eval_reconstruction_metrics.py \
@@ -161,7 +142,7 @@ python scripts/eval_reconstruction_metrics.py \
 
 ---
 
-## 7. Demo (single source image + driving video)
+## 7. Demo (still image + driving video)
 
 ```bash
 python demo.py \
@@ -175,7 +156,7 @@ python demo.py \
 
 ---
 
-## 8. Alternative entry (`run.py`, module)
+## 8. Other launch modes
 
 ```bash
 python run.py --config config/mgif-256-local.yaml --mode train --log_dir logs
@@ -187,38 +168,18 @@ PYTHONPATH=. python -m fom --config config/mgif-256-local.yaml --mode train --lo
 
 ---
 
-## 9. Layout (what to zip for submission)
-
-When this folder is part of the full **first-order-model** Git repository, the final report markdown lives one level up: **`../CS445_PROJECT_REPORT.md`** (repo root). Figures referenced there are under **`CS445_Final_Project/report_assets/`** from the repo’s perspective (this folder’s **`report_assets/`**).
-
-| Path | Purpose |
-|------|--------|
-| `fom/` | Package root: **`modules/`** (nets), **`data/`** (I/O + datasets), **`services/`** (train + inference), **`entry.py`**, shims |
-| `cli.py`, `run.py`, `demo.py` | Launchers |
-| `config/*.yaml` | Hyperparameters and data paths |
-| `scripts/` | `eval_reconstruction_metrics.py`, shell helpers |
-| `requirements.txt` | Python dependencies |
-| `.gitignore` | Optional; keeps venv and caches out of version control |
-| `RUN_README.md` | This file (primary run instructions for graders) |
-| `report_assets/` | Default figures for the report (PNG + GIF); replace with your own `logs/...` exports when available |
-| `dataset/` | Processed MGIF tree (`moving-gif-processed/...`); large-often omitted from zip with a Drive link |
-
-**Large artifacts:** you may omit **`dataset/`** (processed MGIF files) and **`logs/`** from the zip if the report links to data on Drive; graders then need your data link to re-run training.
-
----
-
 ## 10. Troubleshooting
 
 | Symptom | Likely fix |
 |---------|------------|
-| `FileNotFoundError` / empty dataset | **`dataset/`** must exist **relative to cwd** (see top of this file); fix cwd, symlink, or set `root_dir` to an absolute path |
-| MP4 / ffmpeg error | Install FFmpeg, or set `reconstruction_params.format` / `animate_params.format` to `.gif` |
-| CUDA OOM | Lower `batch_size` in YAML or use `mgif-256-local.yaml` / 128 config |
-| Import / `fom` not found | Use `python cli.py` (it prepends this folder) or set `PYTHONPATH=.` |
-| Checkpoint load mismatch | `--config` must match how the checkpoint was trained |
+| Dataset missing / empty index | Run commands **from** `CS445_Final_Project` with **`dataset/`** laid out as above; or edit YAML paths to match where MGIF tree lives |
+| MP4 / ffmpeg errors | Install FFmpeg or switch configs to `.gif` |
+| CUDA OOM | Reduce `batch_size` or use `mgif-256-local.yaml` / 128 YAML |
+| `fom` import errors | Run **`python cli.py`** from this folder or export **`PYTHONPATH=.`** |
+| Checkpoint mismatch | Same **`--config`** family as training |
 
 ---
 
 ## Citation
 
-Method: Siarohin et al., *First Order Motion Model for Image Animation*, NeurIPS 2019. Official code: `https://github.com/AliaksandrSiarohin/first-order-model`.
+Method: Siarohin et al., *First Order Motion Model for Image Animation*, NeurIPS 2019.
