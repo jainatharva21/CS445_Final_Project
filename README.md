@@ -27,7 +27,6 @@ If those folders are missing or misplaced, training will fail when the loader bu
 ## 1. Prerequisites
 
 - **Python 3.8+** (`fom/entry.py` enforces 3.8+; tested with **3.9** and pinned `requirements.txt`)
-- **Git** (optional)
 - **GPU:** strongly recommended for longer training; CPU works but is slow per epoch.
 - **FFmpeg:** optional for MP4; GIF configs avoid needing it (see `config/mgif-e2e-smoke.yaml`).
 
